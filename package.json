@@ -1,1 +1,12 @@
-{"name":"ditto-investment-journal","version":"1.0.0","private":true,"type":"module","scripts":{"dev":"node server.mjs","start":"node server.mjs","check":"node --check src/app.js"}}
+{
+  "name": "ditto-investment-journal",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/build.mjs && node server.mjs",
+    "start": "node scripts/build.mjs && node server.mjs",
+    "check": "node --check src/app.js",
+    "build": "node scripts/build.mjs"
+  }
+}

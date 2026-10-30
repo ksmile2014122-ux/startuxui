@@ -111,3 +111,203 @@ else if(a==='tag-toggle'||a==='category')b.classList.toggle('chosen');else if(a=
 app.addEventListener('submit',e=>{if(e.target.id==='journal'){e.preventDefault();e.stopImmediatePropagation();capture();go(draft.entry.trim()?'preview':'validation')}else if(e.target.id==='searchform'){e.preventDefault();e.stopImmediatePropagation();const q=new FormData(e.target).get('query')||'';go(/삼성|삼천|여의도|제시/.test(q)?'results':'no-results')}else if(e.target.id==='reportform'){e.preventDefault();e.stopImmediatePropagation();go('report-done')}},true);
 window.addEventListener('hashchange',()=>render());render();
 
+
+/* Local review fixes: stable SVG controls and explicit following state. */
+icons.comment='<path d="M21 15a3 3 0 0 1-3 3H8l-5 4V5a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3z"/>';
+icons.bookmark='<path d="M6 3h12v19l-6-4-6 4z"/>';
+icons.edit='<path d="M13 4H4v17h17v-9M16 2l6 6-11 11-5 1 1-5z"/>';
+icons.ditto='<path d="M7 4H3v6h4zM21 14h-4v6h4zM7 7h7a5 5 0 0 1 0 10H9M17 17h-7a5 5 0 0 1 0-10h5"/>';
+const renderBeforeControlFix=render;
+function updateControls(){
+  document.querySelectorAll('[data-action="follow"]').forEach(b=>{b.textContent=follow?'팔로잉':'팔로우';b.classList.toggle('is-following',follow);b.setAttribute('aria-pressed',String(follow))});
+  document.querySelectorAll('[data-action="like"]').forEach(b=>{b.innerHTML=icon('ditto')+'<span>Ditto</span>';b.classList.toggle('is-selected',liked);b.setAttribute('aria-pressed',String(liked))});
+  document.querySelectorAll('[data-action="comments"]').forEach(b=>{if(b.closest('nav')||b.closest('.info-actions'))return;b.innerHTML=icon('comment')+'<span>댓글</span>'});
+  document.querySelectorAll('[data-action="save"]').forEach(b=>{b.innerHTML=icon('bookmark')+`<span>${saved?'저장됨':'저장'}</span>`;b.classList.toggle('is-selected',saved);b.setAttribute('aria-pressed',String(saved))});
+  document.querySelectorAll('.floating[data-action="write"]').forEach(b=>{b.innerHTML=icon('edit')+'<span>일지 작성</span>'});
+  const shortPhoto=document.querySelector('.short-photo');
+  if(shortPhoto){shortPhoto.classList.add('clean-short-background');shortPhoto.innerHTML='<div class="short-chart-grid"></div>'+chart();shortPhoto.setAttribute('aria-label','중복 문구와 아이콘이 없는 시연 차트 배경')}
+}
+render=function(){renderBeforeControlFix();updateControls()};
+app.addEventListener('click',e=>{if(e.target.closest('[data-action="save"]'))queueMicrotask(updateControls)});
+render();
+
+// Image-backed local prototype: keep the supplied Shorts composition intact.
+const renderBeforeShortsReference=render;
+render=function(){
+ const page=location.hash.slice(1);
+ if(!['shorts','shorts-full'].includes(page)){renderBeforeShortsReference();return}
+ const zone=(label,action,x,y,w,h)=>`<button type="button" class="shorts-hit" aria-label="${label}" title="${label}" data-action="${action}" style="left:${x}%;top:${y}%;width:${w}%;height:${h}%"></button>`;
+ app.className='shorts-reference-layout';
+ app.innerHTML=`<section class="shorts-reference-screen" aria-label="Shorts Full Viewer 이미지 기반 시연"><img src="assets/shorts-full-viewer.png" alt="쇼츠 시연 화면. 목표가 51,500원, 매수 진입 48,200원. 여의도 제시리버모어의 손익비 교육 콘텐츠." width="780" height="1688">${zone('이전 화면','home',0,0,15,6.6)}${zone('내 프로필','my',85,0,15,6.6)}${zone('쇼츠 닫기','home',3,7.5,12,5.5)}<button class="shorts-hit" aria-label="음소거 전환 (영상 없는 시연)" title="음소거 전환" data-action="shorts-audio" style="left:85%;top:7.5%;width:12%;height:5.5%"></button>${zone('작성자 팔로우','follow',83,31,14,8)}${zone('Ditto 공감','like',83,39,14,9)}${zone('댓글 128개 보기','comments',83,49,14,9)}${zone('콘텐츠 저장','save',83,58,14,9)}${zone('공유','share',83,67,14,9)}${zone('다음 클립 보기','next-short',4,76,92,6)}${zone('Main','home',0,92.4,25,7.6)}${zone('Ditto Live','live',25,92.4,25,7.6)}${zone('Ditto Shorts','shorts',50,92.4,25,7.6)}${zone('My Ditto','my',75,92.4,25,7.6)}</section><div id="toast" role="status"></div>`;
+ window.scrollTo(0,0);
+};
+app.addEventListener('click',event=>{if(!app.classList.contains('shorts-reference-layout'))return;const control=event.target.closest('[data-action]');if(!control)return;const action=control.dataset.action;if(['follow','like','save','shorts-audio'].includes(action)){event.stopImmediatePropagation();if(action==='follow'){follow=!follow;store('ditto.follow',follow);toast(follow?'팔로잉으로 변경했습니다':'팔로우를 해제했습니다')}else if(action==='like'){liked=!liked;toast(liked?'Ditto 공감했습니다':'공감을 취소했습니다')}else if(action==='save'){saved=!saved;store('ditto.saved',saved);toast(saved?'콘텐츠를 저장했습니다':'저장을 해제했습니다')}else toast('정지 이미지 시연입니다. 재생되는 음성은 없습니다.');control.setAttribute('aria-pressed',String(action==='follow'?follow:action==='like'?liked:saved));}},true);
+render();
+
+// Persist comments per post in this browser.
+const commentStorageKey='ditto.comments.v1';
+let postComments=read(commentStorageKey,{});
+let commentPostId='sample-main';
+const renderBeforeComments=render;
+function commentsForPost(){const list=postComments[commentPostId];return Array.isArray(list)?list:[]}
+function persistComments(){store(commentStorageKey,postComments)}
+function commentListHTML(){const comments=commentsForPost();return comments.length?comments.map(c=>`<article class="user-comment"><div class="row"><strong>${esc(c.author)}</strong><button type="button" class="comment-delete" data-comment-delete="${esc(c.id)}" aria-label="내 댓글 삭제">삭제</button></div><p>${esc(c.text)}</p><small>${esc(new Date(c.createdAt).toLocaleString('ko-KR'))}</small></article>`).join(''):'<p class="comments-empty">아직 댓글이 없어요. 첫 댓글을 남겨보세요.</p>'}
+render=function(){
+ const page=location.hash.slice(1);
+ if(page!=='comments'&&page!=='comment-write'){renderBeforeComments();return}
+ mount(page,page==='comments'?'댓글':'댓글 작성',`<section class="comments-post"><small>선택한 게시물</small><h2>${commentPostId==='sample-main'?'삼천당제약 · 투자일지':commentPostId==='sample-shorts'?'Ditto Shorts':commentPostId==='sample-live'?'Ditto Live':'내 투자일지'}</h2></section><section class="comments-panel"><h2>댓글 <span>${commentsForPost().length}</span></h2><div id="persisted-comments">${commentListHTML()}</div></section><form id="persisted-comment-form"><label for="comment-body">댓글 작성</label><textarea id="comment-body" name="body" required maxlength="500" placeholder="게시물에 대한 생각을 남겨주세요."></textarea><div class="row"><small id="comment-count">0 / 500</small><button type="submit" class="primary">댓글 등록</button></div><p class="comment-help">댓글은 이 브라우저에 저장됩니다.</p></form>${button('게시물로 돌아가기',commentPostId==='sample-main'?'detail':commentPostId==='sample-shorts'?'shorts':commentPostId==='sample-live'?'live-room':'my-post')}`,{nav:true});
+ if(page==='comment-write')document.querySelector('#comment-body').focus();
+};
+app.addEventListener('click',event=>{
+ const deleteButton=event.target.closest('[data-comment-delete]');
+ if(deleteButton){event.preventDefault();event.stopImmediatePropagation();postComments[commentPostId]=commentsForPost().filter(c=>c.id!==deleteButton.dataset.commentDelete);persistComments();render();toast('댓글을 삭제했습니다.');return}
+ const commentButton=event.target.closest('[data-action="comments"],[data-action="comment-write"]');
+ if(commentButton){event.preventDefault();event.stopImmediatePropagation();const current=location.hash.slice(1);if(current!=='comments'&&current!=='comment-write'){commentPostId=current==='my-post'||current==='preview'?'own-'+(entries[0]?.id||'draft'):current.startsWith('shorts')?'sample-shorts':current.startsWith('live')?'sample-live':'sample-main'}go(commentButton.dataset.action);}
+},true);
+app.addEventListener('submit',event=>{
+ if(event.target.id!=='persisted-comment-form')return;
+ event.preventDefault();event.stopImmediatePropagation();
+ const text=new FormData(event.target).get('body').trim();
+ if(!text){document.querySelector('#comment-body').setCustomValidity('댓글 내용을 입력해주세요.');document.querySelector('#comment-body').reportValidity();return}
+ if(text.length>500)return;
+ const comment={id:globalThis.crypto?.randomUUID?.()||String(Date.now())+Math.random(),author:nickname,text,createdAt:Date.now()};
+ postComments[commentPostId]=[...commentsForPost(),comment];persistComments();
+ if(location.hash==='#comments')render();else go('comments');
+ toast('게시물에 댓글을 등록했습니다.');
+},true);
+app.addEventListener('input',event=>{if(event.target.id!=='comment-body')return;event.target.setCustomValidity('');document.querySelector('#comment-count').textContent=event.target.value.length+' / 500'});
+render();
+
+
+// Comment Ditto reactions are stored with each comment, per post.
+const commentListBeforeDitto=commentListHTML;
+commentListHTML=function(){const list=commentsForPost();return list.length?list.map(c=>`<article class="user-comment"><div class="row"><strong>${esc(c.author)}</strong><button type="button" class="comment-delete" data-comment-delete="${esc(c.id)}" aria-label="내 댓글 삭제">삭제</button></div><p>${esc(c.text)}</p><div class="row"><small>${esc(new Date(c.createdAt).toLocaleString('ko-KR'))}</small><button type="button" class="comment-ditto ${c.ditto?'selected':''}" data-comment-ditto="${esc(c.id)}" aria-pressed="${Boolean(c.ditto)}">${icon('ditto')}<span>Ditto ${c.ditto?1:0}</span></button></div></article>`).join(''):'<p class="comments-empty">아직 댓글이 없어요. 첫 댓글을 남겨보세요.</p>'};
+app.addEventListener('click',event=>{const b=event.target.closest('[data-comment-ditto]');if(!b)return;event.preventDefault();event.stopImmediatePropagation();const c=commentsForPost().find(c=>c.id===b.dataset.commentDitto);if(!c)return;c.ditto=!c.ditto;persistComments();b.classList.toggle('selected',c.ditto);b.setAttribute('aria-pressed',String(c.ditto));b.querySelector('span').textContent='Ditto '+(c.ditto?1:0)},true);
+const renderBeforePremium=render;
+render=function(){renderBeforePremium();
+ const p=location.hash.slice(1);
+ if(['shorts','shorts-full'].includes(p)){
+  const react=document.querySelector('.shorts-reference-screen [data-action="like"]');
+  if(react){react.classList.add('shorts-ditto-visible');react.setAttribute('aria-label','Ditto 공감');react.innerHTML=icon('ditto')+'<span>Ditto</span>';react.setAttribute('aria-pressed',String(liked));react.classList.toggle('selected',liked)}
+  const next=document.querySelector('.shorts-reference-screen [data-action="next-short"]');
+  if(next){next.classList.add('shorts-next-visible');next.innerHTML='<span class="next-clip-icon">↟</span><span class="next-clip-copy"><small>눌러서 다음 클립 보기</small><span class="marquee-window"><span class="marquee-track"><b>초보 탈출: 손익비 1:3 계산 방법</b><b aria-hidden="true">초보 탈출: 손익비 1:3 계산 방법</b></span></span></span><span class="next-chevron">⌃</span>'}
+ }
+ document.querySelectorAll('.badge-grid .medal,.badge-collection .medal').forEach(el=>{const tier=el.classList.contains('gold')?'billion':el.classList.contains('silver')?'hundred-million':el.classList.contains('rose')?'calendar':'shield';el.className='premium-badge '+tier;el.textContent='';el.setAttribute('role','img');el.setAttribute('aria-label',({'billion':'10억 자산 배지','hundred-million':'1억 자산 배지','calendar':'연속 기록 배지','shield':'위험관리 배지'})[tier]);});
+};
+app.addEventListener('click',event=>{const b=event.target.closest('.shorts-ditto-visible');if(b)queueMicrotask(()=>{b.classList.toggle('selected',liked);b.setAttribute('aria-pressed',String(liked))})});
+render();
+
+// Editable profile and post-aware journal feeds (browser-local prototype).
+let nameChanges=read('ditto.nameChanges',0);
+let userPrinciples=read('ditto.principles',['단일 종목 비중은 총 운용자산의 25%를 넘기지 않는다.','진입 시 손절선(-5%)을 시스템 주문으로 선설정한다.','모든 매매는 당일 22시 전 DITTO 일지로 복기한다.']);
+let activeJournalId=null;
+const sampleJournals=[{id:'sample-breakout',author:'여의도 제시리버모어',title:'삼천당제약 돌파매매 복기',stock:'삼천당제약',entry:'거래량 증가와 전일 고가 돌파를 확인한 뒤 분할 진입했습니다.',memo:'추격 매수를 피하고 사전에 설정한 손절 기준을 준수했습니다.',visibility:'전체 공개',demo:true},{id:'sample-risk',author:'스윙의정석',title:'원칙 손절 기록',stock:'삼성전자',entry:'지지 구간을 확인했으나 거래량이 기대에 미치지 못했습니다.',memo:'원칙에 따라 손절하고 다음 진입 조건을 기다렸습니다.',visibility:'전체 공개',demo:true},{id:'sample-review',author:'밸류파인더',title:'월간 매매복기',stock:'SK하이닉스',entry:'기업 실적과 밸류에이션 기준을 먼저 검토했습니다.',memo:'매매 횟수보다 기록의 일관성을 유지하겠습니다.',visibility:'전체 공개',demo:true}];
+const ownJournal=id=>entries.find(p=>String(p.id)===String(id));
+const selectedJournal=()=>ownJournal(activeJournalId)||sampleJournals.find(p=>p.id===activeJournalId);
+function journalTiles(posts,own=false){return `<div class="journal-grid">${posts.map((p,i)=>`<button class="journal-tile" data-journal-id="${esc(p.id)}" aria-label="${esc(p.title||p.stock)} 열기"><div class="journal-thumb thumb-${i%3}">${chart()}</div><span>${esc(p.title||p.stock+' 투자일지')}</span><small>${own?esc(nickname):esc(p.author)}${p.demo?' · 시연':''}</small></button>`).join('')}</div>`}
+function journalFeed(posts){return posts.map(p=>`<article class="journal-feed-card"><div class="row"><strong>${esc(p.demo?p.author:nickname)}</strong><small>${p.demo?'시연 게시물':esc(p.visibility||'전체 공개')}</small></div><button class="journal-open" data-journal-id="${esc(p.id)}"><h3>${esc(p.title||'투자일지')}</h3><span class="tag">#${esc(p.stock)}</span><p>${esc(p.entry)}</p>${chart()}<small>게시물 자세히 보기 →</small></button></article>`).join('')}
+const renderBeforeProfileFeeds=render;
+render=function(){const page=location.hash.slice(1);
+ if(page==='edit-profile'){
+ mount(page,'프로필 수정',`<form id="profile-settings"><section class="card"><h2>나의 투자 이름</h2><label for="profile-nickname">닉네임</label><input id="profile-nickname" name="nickname" maxlength="12" required value="${esc(nickname)}" ${nameChanges>=2?'readonly':''}><p class="profile-limit">닉네임 변경 ${nameChanges} / 2회 · 남은 횟수 ${Math.max(0,2-nameChanges)}회</p>${nameChanges>=2?'<p>닉네임 변경 횟수를 모두 사용했습니다. 투자 원칙은 계속 수정할 수 있어요.</p>':''}</section><section class="card"><h2>나의 투자 3대 원칙</h2>${userPrinciples.map((t,i)=>`<label for="principle-${i}">원칙 ${i+1}</label><textarea id="principle-${i}" name="principle${i}" maxlength="200" required>${esc(t)}</textarea>`).join('')}</section><button type="submit" class="primary">변경 내용 저장</button>${button('취소','my')}</form>`,{nav:false});return;
+ }
+ if(page==='journal-detail'){
+ const p=selectedJournal();if(!p){go('my');return}
+ const own=!p.demo;
+ mount(page,own?'내 투자일지':'투자일지 상세',`<article class="journal-detail-card"><div class="row"><strong>${esc(own?nickname:p.author)}</strong><span class="tag">${p.demo?'시연 게시물':esc(p.visibility||'전체 공개')}</span></div><h1>${esc(p.title||'투자일지')}</h1><div class="stock">#${esc(p.stock)}</div>${chart()}<h3>1. 진입 근거</h3><p>${esc(p.entry)}</p><h3>2. 청산 전략</h3><p>목표가 77,200원 · 손절가 73,100원</p><h3>3. 멘탈 & 반성 메모</h3><p>${esc(p.memo||'기록된 메모가 없습니다.')}</p><div class="row">${button(icon('comment')+' 댓글','selected-post-comments')}${button(icon('bookmark')+' 저장','save')}</div></article>${own?button('일지 내용 수정하기','edit-selected-journal','primary'):''}${button('피드로 돌아가기',own?'my':'home')}`);return;
+ }
+ renderBeforeProfileFeeds();
+ if(page==='my'){
+ const stats=document.querySelector('.stats');
+ if(stats){const days=[...new Set(entries.map(p=>new Date(p.updatedAt||Number(p.id)||Date.now()).toLocaleDateString('en-CA')))].sort().reverse();let streak=0;let cursor=new Date();cursor.setHours(0,0,0,0);if(!days.includes(cursor.toLocaleDateString('en-CA')))cursor.setDate(cursor.getDate()-1);while(days.includes(cursor.toLocaleDateString('en-CA'))){streak++;cursor.setDate(cursor.getDate()-1)}const compliant=entries.filter(p=>p.entry?.trim()&&p.memo?.trim()).length;stats.innerHTML=[[(streak||0)+'일','연속 기록'],[entries.length+'개','작성 일지'],[entries.length?Math.round(compliant/entries.length*100)+'%':'—','원칙 준수율']].map(([n,t])=>`<div class="stat-frame"><strong>${n}</strong><span>${t}</span></div>`).join('');stats.title='원칙 준수율은 진입 근거와 복기 메모를 모두 작성한 일지의 비율인 시연 지표입니다.';}
+ const principles=document.querySelector('.principles');if(principles)principles.innerHTML='<div class="row"><h2>⚖ 나의 투자 3대 원칙</h2>'+button('수정','edit-profile','text-link')+'</div>'+userPrinciples.map((t,i)=>`<p><b>${i+1}</b>${esc(t)}</p>`).join('');
+ document.querySelectorAll('[data-action="my-post"]').forEach(b=>b.remove());
+ const main=document.querySelector('main');main.insertAdjacentHTML('beforeend',`<section class="my-journal-section"><h2>투자일지 피드 <small>${entries.length}개</small></h2>${entries.length?journalTiles(entries,true):'<div class="card"><p>아직 작성한 투자일지가 없어요.</p>'+button('첫 일지 작성하기','write','primary')+'</div>'}</section>`);
+ }
+ if(page==='profile')document.querySelector('main').insertAdjacentHTML('beforeend','<section class="my-journal-section"><h2>투자일지 그리드</h2>'+journalTiles(sampleJournals)+'</section>');
+ if(page==='home'){
+ const main=document.querySelector('main');
+ // Replace duplicate old own-entry summaries with a single linked post feed.
+ main.querySelectorAll(':scope > section.card').forEach(el=>{if(el.querySelector('.stock'))el.remove()});
+ main.insertAdjacentHTML('beforeend','<section class="main-journal-section"><h2>투자일지 피드</h2><p class="feed-local-note">내 기록과 다른 투자자의 시연 게시물을 함께 살펴보세요.</p>'+journalFeed([...entries,...sampleJournals])+'</section>');
+ }
+};
+app.addEventListener('submit',event=>{if(event.target.id!=='profile-settings')return;event.preventDefault();event.stopImmediatePropagation();const data=new FormData(event.target);const newName=String(data.get('nickname')||'').trim();const newPrinciples=[0,1,2].map(i=>String(data.get('principle'+i)||'').trim());if(!newName||newName.length>12||newPrinciples.some(v=>!v)){toast('닉네임과 투자 원칙 3개를 모두 입력해주세요.');return}if(newName!==nickname){if(nameChanges>=2){toast('닉네임은 최대 2회까지만 변경할 수 있어요.');return}nickname=newName;nameChanges++;store('ditto.name',nickname);store('ditto.nameChanges',nameChanges)}userPrinciples=newPrinciples;store('ditto.principles',userPrinciples);go('my');toast('프로필과 투자 원칙을 저장했습니다.');},true);
+app.addEventListener('click',event=>{
+ const tile=event.target.closest('[data-journal-id]');if(tile){event.preventDefault();event.stopImmediatePropagation();activeJournalId=tile.dataset.journalId;go('journal-detail');return}
+ const b=event.target.closest('[data-action]');if(!b)return;const action=b.dataset.action;
+ if(action==='edit-selected-journal'){event.preventDefault();event.stopImmediatePropagation();const p=ownJournal(activeJournalId);if(!p)return;draft={...p};store('ditto.draft',draft);go('write')}
+ if(action==='selected-post-comments'){event.preventDefault();event.stopImmediatePropagation();commentPostId='journal-'+activeJournalId;go('comments')}
+ if(action==='publish'&&activeJournalId&&ownJournal(activeJournalId)){
+ event.preventDefault();event.stopImmediatePropagation();const index=entries.findIndex(p=>String(p.id)===String(activeJournalId));entries[index]={...entries[index],...draft,id:entries[index].id,updatedAt:Date.now()};store('ditto.entries',entries);go('journal-detail');toast('일지 내용을 수정했습니다.');
+ }
+ if(action==='write'&&!event.target.closest('#journal')&&location.hash!=='#journal-detail'&&location.hash!=='#preview'){activeJournalId=null}
+},true);
+render();
+
+// Supabase-backed input handlers. Capture at document level before legacy local handlers.
+let db=null,cloudUser=null,cloudReady=false,cloudError='',cloudFeed=[],cloudProfiles=new Map(),cloudBusy=false;
+const localEntriesBackup=[...entries];
+const cloudVisibility=v=>({'전체 공개':'public','팔로워에게만 공개':'followers','나만 보기':'private'})[v]||'private';
+const displayVisibility=v=>({public:'전체 공개',followers:'팔로워에게만 공개',private:'나만 보기'})[v]||'나만 보기';
+const isUUID=v=>/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(v));
+function cloudRequired(){if(!cloudReady){toast(cloudError||'데이터베이스 연결을 준비 중입니다.');return false}if(!cloudUser){go('cloud-login');return false}return true}
+function cloudMessage(error){const msg=error?.message||'저장하지 못했습니다. 연결 상태를 확인하고 다시 시도해주세요.';toast(msg)}
+function unwrap(result){if(result.error)throw result.error;return result.data}
+async function refreshCloud(){
+ const rows=unwrap(await db.from('ditto_journals').select('*').order('created_at',{ascending:false}).limit(200));
+ const profiles=unwrap(await db.from('ditto_profiles').select('user_id,nickname').limit(1000));cloudProfiles=new Map(profiles.map(p=>[p.user_id,p.nickname]));
+ const mapRow=p=>({...p,visibility:displayVisibility(p.visibility),author:cloudProfiles.get(p.author_id)||'투자자',cloud:true,updatedAt:Date.parse(p.created_at)});
+ cloudFeed=rows.map(mapRow);entries=cloudFeed.filter(p=>p.author_id===cloudUser?.id);
+ if(cloudUser){const profile=unwrap(await db.from('ditto_profiles').select('*').eq('user_id',cloudUser.id).maybeSingle());if(profile){nickname=profile.nickname;nameChanges=profile.nickname_changes;userPrinciples=profile.principles}else{nickname='투자자_'+cloudUser.id.slice(0,6);nameChanges=0;userPrinciples=['진입 전 손절 기준을 정합니다.','종목 비중을 관리합니다.','모든 매매를 복기합니다.'];unwrap(await db.from('ditto_profiles').insert({user_id:cloudUser.id,nickname,principles:userPrinciples}));}}
+}
+async function loadCloudComments(journalId){
+ const rows=unwrap(await db.from('ditto_comments').select('*').eq('journal_id',journalId).order('created_at'));
+ const ids=rows.map(c=>c.id);let reactions=[];if(ids.length)reactions=unwrap(await db.from('ditto_comment_reactions').select('*').in('comment_id',ids));
+ postComments['journal-'+journalId]=rows.map(c=>({id:c.id,text:c.body,author:cloudProfiles.get(c.author_id)||'투자자',authorId:c.author_id,createdAt:Date.parse(c.created_at),cloud:true,ditto:reactions.some(r=>r.comment_id===c.id&&r.user_id===cloudUser?.id),count:reactions.filter(r=>r.comment_id===c.id).length}));
+}
+const renderBeforeCloud=render;
+render=function(){const page=location.hash.slice(1);
+ if(page==='cloud-login'){
+ mount(page,'DITTO 로그인',`<section class="card"><h1>기록을 안전하게 저장하세요</h1><p>이메일 계정으로 로그인하면 일지와 댓글을 Supabase에 저장합니다.</p><form id="cloud-auth"><label>이메일<input type="email" name="email" required autocomplete="email"></label><label>비밀번호<input type="password" name="password" required minlength="8" autocomplete="current-password"></label><button type="submit" class="primary">로그인</button><button type="submit" name="signup" value="yes">이메일로 회원가입</button></form><p id="auth-feedback" role="status"></p></section>${button('피드 둘러보기','home')}`,{nav:false});return;
+ }
+ const selected=cloudFeed.find(p=>p.id===activeJournalId);
+ if(page==='journal-detail'&&selected&&selected.author_id!==cloudUser?.id){
+ mount(page,'투자일지 상세',`<article class="journal-detail-card"><div class="row"><strong>${esc(selected.author)}</strong><span class="tag">${esc(selected.visibility)}</span></div><h1>${esc(selected.title)}</h1><div class="stock">#${esc(selected.stock)}</div>${chart()}<h3>진입 근거</h3><p>${esc(selected.entry)}</p><h3>멘탈 & 반성 메모</h3><p>${esc(selected.memo)}</p>${button('댓글','selected-post-comments')}${button('피드로 돌아가기','home')}</article>`);return;
+ }
+ renderBeforeCloud();
+ if(page==='start'){document.querySelectorAll('[data-action="nickname"],[data-action="home"]').forEach(b=>{if(b.closest('.info-actions'))b.dataset.action='cloud-login'})}
+ if(page==='home'&&cloudReady){const section=document.querySelector('.main-journal-section');if(section)section.innerHTML='<h2>투자일지 피드</h2>'+ (cloudFeed.length?journalFeed(cloudFeed.map(p=>({...p,demo:true,author:p.author}))):'<div class="card"><p>아직 공개된 투자일지가 없어요.</p>'+button('첫 일지 작성하기','write','primary')+'</div>');section?.querySelectorAll('small').forEach(s=>{s.textContent=s.textContent.replace('시연 게시물','게시물')})}
+ if(page==='my'){document.querySelector('main')?.insertAdjacentHTML('afterbegin',`<div class="cloud-account">${cloudUser?'<span>● 로그인됨 · Supabase 저장</span>'+button('로그아웃','cloud-signout','text-link'):button('로그인하고 데이터 저장하기','cloud-login','primary')}</div>`)}
+ if(['comments','comment-write'].includes(page)&&commentPostId.startsWith('journal-')){
+ const list=commentsForPost();document.querySelectorAll('.user-comment').forEach((el,i)=>{const c=list[i];if(c?.cloud&&c.authorId!==cloudUser?.id)el.querySelector('[data-comment-delete]')?.remove();const count=el.querySelector('.comment-ditto span');if(count&&c?.cloud)count.textContent='Ditto '+c.count});
+ document.querySelector('.comment-help')?.replaceChildren(document.createTextNode('댓글은 Supabase에 저장됩니다.'));
+ }
+ if(cloudBusy)document.querySelectorAll('button[type="submit"]').forEach(b=>b.disabled=true);
+};
+async function cloudTask(fn){if(cloudBusy)return;cloudBusy=true;document.querySelectorAll('button[type="submit"]').forEach(b=>b.disabled=true);try{await fn()}catch(e){cloudMessage(e)}finally{cloudBusy=false;document.querySelectorAll('button[type="submit"]').forEach(b=>b.disabled=false)}}
+document.addEventListener('submit',event=>{
+ const form=event.target;if(!['cloud-auth','profile-settings','persisted-comment-form','nameform'].includes(form.id))return;
+ event.preventDefault();event.stopImmediatePropagation();
+ if(form.id==='cloud-auth'){cloudTask(async()=>{if(!db)throw new Error(cloudError||'연결을 준비 중입니다.');const d=new FormData(form);const credentials={email:d.get('email'),password:d.get('password')};const signup=event.submitter?.name==='signup';const result=signup?await db.auth.signUp(credentials):await db.auth.signInWithPassword(credentials);unwrap(result);form.querySelector('[name="password"]').value='';if(signup&&!result.data.session){document.querySelector('#auth-feedback').textContent='이메일로 보낸 인증 링크를 확인한 뒤 로그인해주세요.';return}cloudUser=result.data.user;await refreshCloud();go('my')});return}
+ if(!cloudRequired())return;
+ if(form.id==='nameform'){toast('닉네임은 My Ditto의 프로필 수정에서 변경해주세요.');return}
+ if(form.id==='profile-settings'){const d=new FormData(form);cloudTask(async()=>{const n=String(d.get('nickname')).trim();const principles=[0,1,2].map(i=>String(d.get('principle'+i)).trim());if(!n||n.length>12||principles.some(p=>!p))throw new Error('닉네임과 투자 원칙 3개를 확인해주세요.');unwrap(await db.from('ditto_profiles').update({nickname:n,principles}).eq('user_id',cloudUser.id).select().single());await refreshCloud();go('my');toast('Supabase에 프로필을 저장했습니다.')});return}
+ const id=commentPostId.replace(/^journal-/,'');if(!isUUID(id)){toast('시연 게시물이 아닌 실제 투자일지를 선택해주세요.');return}
+ const text=String(new FormData(form).get('body')||'').trim();if(!text||text.length>500){toast('댓글을 1~500자로 입력해주세요.');return}
+ cloudTask(async()=>{unwrap(await db.from('ditto_comments').insert({journal_id:id,author_id:cloudUser.id,body:text}));await loadCloudComments(id);go('comments');render();toast('댓글을 저장했습니다.')});
+},true);
+document.addEventListener('click',event=>{
+ const b=event.target.closest('button');if(!b||!app.contains(b))return;const action=b.dataset.action;
+ const reaction=b.dataset.commentDitto,del=b.dataset.commentDelete;
+ if(reaction||del){event.preventDefault();event.stopImmediatePropagation();if(!cloudRequired())return;const c=commentsForPost().find(c=>c.id===(reaction||del));if(!c?.cloud){toast('실제 투자일지의 댓글을 선택해주세요.');return}cloudTask(async()=>{if(del){unwrap(await db.from('ditto_comments').delete().eq('id',del).eq('author_id',cloudUser.id))}else if(c.ditto){unwrap(await db.from('ditto_comment_reactions').delete().eq('comment_id',reaction).eq('user_id',cloudUser.id))}else{unwrap(await db.from('ditto_comment_reactions').insert({comment_id:reaction,user_id:cloudUser.id}))}await loadCloudComments(commentPostId.slice(8));render()});return}
+ if(b.dataset.journalId&&cloudFeed.some(p=>p.id===b.dataset.journalId)){event.preventDefault();event.stopImmediatePropagation();activeJournalId=b.dataset.journalId;go('journal-detail');return}
+ if(action==='cloud-signout'){event.preventDefault();event.stopImmediatePropagation();cloudTask(async()=>{unwrap(await db.auth.signOut());cloudUser=null;entries=[];nickname='게스트';nameChanges=0;activeJournalId=null;postComments={};await refreshCloud();go('home')});return}
+ if(action==='publish'){event.preventDefault();event.stopImmediatePropagation();if(!cloudRequired())return;cloudTask(async()=>{if(!draft.entry?.trim())throw new Error('진입 근거를 입력해주세요.');const row={author_id:cloudUser.id,title:draft.title||'매매일지',stock:draft.stock,entry:draft.entry,memo:draft.memo||'',visibility:cloudVisibility(draft.visibility),updated_at:new Date().toISOString()};const editing=entries.some(p=>p.id===activeJournalId);const result=editing?db.from('ditto_journals').update(row).eq('id',activeJournalId).eq('author_id',cloudUser.id).select().single():db.from('ditto_journals').insert(row).select().single();const savedRow=unwrap(await result);activeJournalId=savedRow.id;await refreshCloud();go('journal-detail');toast('Supabase에 일지를 저장했습니다.')});return}
+ if(action==='selected-post-comments'){event.preventDefault();event.stopImmediatePropagation();if(!isUUID(activeJournalId)){toast('실제 투자일지를 선택해주세요.');return}cloudTask(async()=>{commentPostId='journal-'+activeJournalId;await loadCloudComments(activeJournalId);go('comments')});return}
+ if(['comments','comment-write'].includes(action)&&!commentPostId.startsWith('journal-')){event.preventDefault();event.stopImmediatePropagation();toast('투자일지 피드에서 게시물을 연 뒤 댓글을 선택해주세요.');return}
+ if(['edit-profile','write','nickname','profile-save'].includes(action)&&!cloudUser){event.preventDefault();event.stopImmediatePropagation();cloudRequired();return}
+ if(action==='edit-selected-journal'&&!entries.some(p=>p.id===activeJournalId)){event.preventDefault();event.stopImmediatePropagation();toast('본인 일지만 수정할 수 있습니다.');return}
+},true);
+(async()=>{try{const {supabaseConfig}=await import('./supabase-config.js');const {createClient}=await import('https://esm.sh/@supabase/supabase-js@2.57.4');db=createClient(supabaseConfig.url,supabaseConfig.key);const {data,error}=await db.auth.getUser();if(error&&error.status!==400&&error.status!==401)throw error;cloudUser=data.user||null;entries=[];await refreshCloud();cloudReady=true;render();}catch(error){cloudError='Supabase 연결 실패: '+error.message;cloudReady=false;render();toast(cloudError)}})();
+render();
