@@ -31,3 +31,13 @@ Node.js는 https://nodejs.org 에서 LTS 버전을 설치할 수 있습니다.
 ```sh
 npm run check
 ```
+
+## 디자인 재구현 버전
+
+첨부한 780×1688 디자인의 390×844 논리 크기를 기준으로 화면과 보조 상태를 재구성했습니다. 기본 HTML/CSS/JS로 실행되며 외부 패키지 설치가 필요하지 않습니다. 실제 UI는 DOM으로 구현하며 인물/영상/차트의 일부 이미지 영역은 제공받은 화면 이미지를 CSS 배경으로 표시합니다. 첨부 이미지 원본 전체도 assets에 포함되어 있으므로 원본 사진 에셋을 받으면 교체할 수 있습니다. 라이브와 쇼츠는 정지 이미지 시연이며 실제 재생 기능은 없습니다.
+
+주요 주소: /#start, /#home, /#write, /#preview, /#my, /#profile, /#badges, /#live, /#live-room, /#shorts.
+
+Vercel: Root Directory 기본값(빈 값), Framework Other. vercel.json이 빌드 없이 최상위 파일을 배포하도록 설정합니다. GitHub push가 자동 배포를 실행하도록 연결되어 있다면 업로드 후 자동 배포될 수 있습니다.
+
+검증: JavaScript 구문 검사. 이 환경에서 미리보기 브라우저가 localhost에 연결되지 않아 시각 비교는 완료되지 않았습니다. 픽셀 단위 일치가 검증된 버전은 아닙니다.
