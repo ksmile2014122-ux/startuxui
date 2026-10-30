@@ -1,3 +1,5 @@
+import shortsHandler from './api/economy-shorts.js';
+try { process.loadEnvFile('.env'); } catch(e) { if(e.code!=='ENOENT')throw e; }
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -7,6 +9,7 @@ const types = {'.html':'text/html; charset=utf-8','.js':'text/javascript; charse
 const server = http.createServer(async (req, res) => {
   try {
     const pathname = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
+    if(pathname==='/api/economy-shorts'){ await shortsHandler(req,res); return; }
     if (!(pathname === '/' || pathname === '/index.html' || pathname.startsWith('/src/') || pathname.startsWith('/assets/'))) { res.writeHead(404).end('Not found'); return; }
     const file = path.resolve(root, '.' + (pathname === '/' ? '/index.html' : pathname));
     if (!file.startsWith(root + path.sep) || pathname.split('/').some(p => p.startsWith('.'))) { res.writeHead(403).end(); return; }
@@ -21,4 +24,5 @@ server.on('error', error => {
   process.exitCode = 1;
 });
 server.listen(port, '127.0.0.1', () => console.log(`DITTO: http://localhost:${port}`));
+
 
